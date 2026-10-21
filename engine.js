@@ -34,6 +34,14 @@ function matchAnswer(value,options,aliases=[]){
  return {index:-1,unknown:true};
 }
 function analyze(files,questions,manual=[{},{}],assign=[{},{}],settings={}){
+ const versionErrors=[];
+ questions=questions.map(q=>{
+  if(!q.variants?.length)return q;
+  const versions=[q,...q.variants.map(v=>({...q,...v,answerAliases:v.answerAliases}))];
+  const detected=files.map(f=>{if(!f)return -1;const scores=versions.map(v=>Math.max(0,...f.header.filter(h=>!meta(h)).map(h=>similarity(h,v.question))));const best=Math.max(...scores);return best>=.75?scores.indexOf(best):-1;});
+  const known=detected.filter(i=>i>=0);if(new Set(known).size>1&&settings[q.id]?.include!==false)versionErrors.push(`Pytanie ${q.number}: pliki PRZED i PO zawierają różne wersje pytania. Wczytaj wyniki tego samego zestawu lub pomiń to pytanie.`);
+  return known.length?versions[known[0]]:q;
+ });
  const maps=files.map((f,i)=>mapping(f,questions,manual[i]));const qstats=questions.map((q,qi)=>{
   const correct=settings[q.id]?.correct??q.correct,include=settings[q.id]?.include??true;
   const sides=files.map((f,fi)=>{
@@ -43,7 +51,7 @@ function analyze(files,questions,manual=[{},{}],assign=[{},{}],settings={}){
    return {counts,answered,blank,moved,unknown:[...unknown.values()],column:m.column,reason:m.reason,conflict:!!m.conflict,correct:counts[correct],percent:answered?counts[correct]/answered*100:null};
   });return {...q,correct,include,sides};
  });
- const errors=[];qstats.filter(q=>q.include).forEach(q=>q.sides.forEach((s,fi)=>{if(s.column<0)errors.push(`Pytanie ${q.number}: brak kolumny ${fi?'PO':'PRZED'}.`);else if(s.conflict)errors.push(`Pytanie ${q.number}: ta sama kolumna została przypisana dwukrotnie (${fi?'PO':'PRZED'}).`);else if(!s.answered)errors.push(`Pytanie ${q.number}: brak odpowiedzi ${fi?'PO':'PRZED'}.`);if(s.unknown.length)errors.push(`Pytanie ${q.number}: nierozpoznane odpowiedzi ${fi?'PO':'PRZED'}.`);}));
+ const errors=[...versionErrors];qstats.filter(q=>q.include).forEach(q=>q.sides.forEach((s,fi)=>{if(s.column<0)errors.push(`Pytanie ${q.number}: brak kolumny ${fi?'PO':'PRZED'}.`);else if(s.conflict)errors.push(`Pytanie ${q.number}: ta sama kolumna została przypisana dwukrotnie (${fi?'PO':'PRZED'}).`);else if(!s.answered)errors.push(`Pytanie ${q.number}: brak odpowiedzi ${fi?'PO':'PRZED'}.`);if(s.unknown.length)errors.push(`Pytanie ${q.number}: nierozpoznane odpowiedzi ${fi?'PO':'PRZED'}.`);}));
  const included=qstats.filter(q=>q.include);if(!included.length)errors.push('Wybierz co najmniej jedno pytanie.');
  const valid=included.filter(q=>q.sides.every(s=>s.answered&&!s.unknown.length&&s.column>=0&&!s.conflict));
  const avg=fi=>valid.length?valid.reduce((n,q)=>n+q.sides[fi].percent,0)/valid.length:null;
